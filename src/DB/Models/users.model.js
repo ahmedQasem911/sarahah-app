@@ -64,6 +64,12 @@ const usersSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+    toJSON: {
+      virtuals: true, // to see virtuals in the response
+    },
+    toObject: {
+      virtuals: true, // to see virtuals in the log
+    },
     virtuals: {
       fullName: {
         get() {
