@@ -62,6 +62,60 @@ export const signUpUser = async (req, res) => {
 };
 
 /**
+ * Sign in an existing user
+ * @route POST /users/signin
+ */
+
+export const signInUser = async (req, res) => {
+  try {
+    // 1. Extract credentials from request body
+    const { email, password } = req.body;
+
+    // 2. Validate required fields
+    if (!email || !password) {
+      return res.status(400).json({
+        message: "Email and password are required",
+      });
+    }
+
+    // 3. Find user by email
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(401).json({
+        message: "Invalid email or password",
+      });
+    }
+
+    // 4. Compare passwords
+    if (user.password !== password) {
+      return res.status(401).json({
+        message: "Invalid email or password",
+      });
+    }
+
+    // 5. Send success response with user data
+    return res.status(200).json({
+      message: "Sign in successful",
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        age: user.age,
+        gender: user.gender,
+      },
+    });
+  } catch (error) {
+    // Handle unexpected errors
+    console.error("Sign In Error:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
+/**
  * Update user data
  * @route PUT /users/update/:userId
  */
