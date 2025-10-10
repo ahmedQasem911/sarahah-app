@@ -153,3 +153,50 @@ export const updateUser = async (req, res) => {
     });
   }
 };
+
+/**
+ * Delete user from database
+ * @route DELETE /users/delete/:userId
+ */
+
+export const deleteUser = async (req, res) => {
+  try {
+    // 1. Extract user ID from params
+    const { userId } = req.params;
+
+    // 2. Check if user exists before deletion
+    const userToDelete = await User.findById(userId);
+    if (!userToDelete) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    // 3. Delete the user
+    await User.findByIdAndDelete(userId);
+
+    // 4. Send success response
+    return res.status(200).json({
+      message: "User deleted successfully",
+      deletedUser: {
+        id: userToDelete._id,
+        email: userToDelete.email,
+        fullName: `${userToDelete.firstName} ${userToDelete.lastName}`,
+      },
+    });
+  } catch (error) {
+    // Handle invalid ObjectId error
+    if (error.name === "CastError") {
+      return res.status(400).json({
+        message: "Invalid user ID format",
+      });
+    }
+
+    // Handle unexpected errors
+    console.error("Delete User Error:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
