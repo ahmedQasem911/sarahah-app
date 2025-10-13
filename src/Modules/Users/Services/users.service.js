@@ -1,14 +1,12 @@
+import { compareSync, hashSync } from "bcrypt";
 import User from "../../../DB/Models/users.model.js";
-
-/**
- * Sign up a new user
- * @route POST /users/signup
- */
+import { decrypt, encrypt } from "../../../Utils/encryption.utils.js";
 
 export const signUpUser = async (req, res) => {
   try {
     // 1. Extract user data from request body
-    const { firstName, lastName, age, gender, email, password } = req.body;
+    const { firstName, lastName, age, gender, email, password, phoneNumber } =
+      req.body;
 
     // 2. Check if user already exists (by email or full name)
     const isUserExist = await User.findOne({
@@ -21,6 +19,19 @@ export const signUpUser = async (req, res) => {
       });
     }
 
+    // Encrypt phone number
+    let encryptedPhoneNumber;
+    try {
+      encryptedPhoneNumber = encrypt(phoneNumber);
+    } catch (encryptError) {
+      return res.status(400).json({
+        message: "Invalid phone number format",
+      });
+    }
+
+    // Hash password
+    const hashedPassword = hashSync(password, 10);
+
     // 3. Create new user
     const newUser = await User.create({
       firstName,
@@ -28,13 +39,33 @@ export const signUpUser = async (req, res) => {
       age,
       gender,
       email,
-      password,
+      password: hashedPassword,
+      phoneNumber: encryptedPhoneNumber,
     });
 
-    // 4. Send success response
+    // 4. Decrypt phone number for response
+    let phoneNumberForResponse = null;
+    if (newUser.phoneNumber) {
+      try {
+        phoneNumberForResponse = decrypt(newUser.phoneNumber);
+      } catch (decryptError) {
+        console.error("Failed to decrypt phone for response:", decryptError);
+        phoneNumberForResponse = null;
+      }
+    }
+
+    // 5. Send success response
     return res.status(201).json({
       message: "User created successfully",
-      user: newUser,
+      user: {
+        id: newUser._id,
+        firstName: newUser.firstName,
+        lastName: newUser.lastName,
+        email: newUser.email,
+        age: newUser.age,
+        gender: newUser.gender,
+        phoneNumber: phoneNumberForResponse,
+      },
     });
   } catch (error) {
     // Handle duplicate key error
@@ -61,11 +92,6 @@ export const signUpUser = async (req, res) => {
   }
 };
 
-/**
- * Sign in an existing user
- * @route POST /users/signin
- */
-
 export const signInUser = async (req, res) => {
   try {
     // 1. Extract credentials from request body
@@ -87,7 +113,8 @@ export const signInUser = async (req, res) => {
     }
 
     // 4. Compare passwords
-    if (user.password !== password) {
+    const isPasswordMatched = compareSync(password, user.password);
+    if (!isPasswordMatched) {
       return res.status(401).json({
         message: "Invalid email or password",
       });
@@ -103,6 +130,7 @@ export const signInUser = async (req, res) => {
         email: user.email,
         age: user.age,
         gender: user.gender,
+        phoneNumber: user.phoneNumber ? decrypt(user.phoneNumber) : null,
       },
     });
   } catch (error) {
@@ -115,18 +143,13 @@ export const signInUser = async (req, res) => {
   }
 };
 
-/**
- * Update user data
- * @route PUT /users/update/:userId
- */
-
 export const updateUser = async (req, res) => {
   try {
     // 1. Extract user ID from params
     const { userId } = req.params;
 
     // 2. Extract update data from request body
-    const { firstName, lastName, age, gender, email } = req.body;
+    const { firstName, lastName, age, gender, email, phoneNumber } = req.body;
 
     // 3. Check if user exists
     const existingUser = await User.findById(userId);
@@ -136,7 +159,7 @@ export const updateUser = async (req, res) => {
       });
     }
 
-    // 4. If email is being updated, check if new email already exists
+    // 4. If email is being updated, check if the new email already exists
     if (email && email !== existingUser.email) {
       const emailExists = await User.findOne({ email });
       if (emailExists) {
@@ -164,17 +187,75 @@ export const updateUser = async (req, res) => {
       }
     }
 
-    // 6. Update user data
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      { firstName, lastName, age, gender, email },
-      { new: true, runValidators: true }
-    );
+    // 6. Handle phone number encryption if being updated
+    let encryptedPhoneNumber;
+    if (phoneNumber) {
+      // Decrypt existing phone number to compare
+      let existingPhoneDecrypted;
+      try {
+        existingPhoneDecrypted = existingUser.phoneNumber
+          ? decrypt(existingUser.phoneNumber)
+          : null;
+      } catch (decryptError) {
+        console.error("Failed to decrypt existing phone:", decryptError);
+        existingPhoneDecrypted = null;
+      }
 
-    // 7. Send success response
+      // Only encrypt if phone number is different
+      if (phoneNumber !== existingPhoneDecrypted) {
+        try {
+          encryptedPhoneNumber = encrypt(phoneNumber);
+        } catch (encryptError) {
+          return res.status(400).json({
+            message: "Invalid phone number format",
+            error: encryptError.message,
+          });
+        }
+      } else {
+        // Same phone number, keep existing encrypted value
+        encryptedPhoneNumber = existingUser.phoneNumber;
+      }
+    }
+
+    // 7. Prepare update data
+    const updateData = {
+      ...(firstName && { firstName }),
+      ...(lastName && { lastName }),
+      ...(age && { age }),
+      ...(gender && { gender }),
+      ...(email && { email }),
+      ...(encryptedPhoneNumber && { phoneNumber: encryptedPhoneNumber }),
+    };
+
+    // 8. Update user data
+    const updatedUser = await User.findByIdAndUpdate(userId, updateData, {
+      new: true,
+      runValidators: true,
+    });
+
+    // 9. Decrypt phone number for response
+    let phoneNumberForResponse = null;
+    if (updatedUser.phoneNumber) {
+      try {
+        phoneNumberForResponse = decrypt(updatedUser.phoneNumber);
+      } catch (decryptError) {
+        console.error("Failed to decrypt phone for response:", decryptError);
+        phoneNumberForResponse = null;
+      }
+    }
+
+    // 10. Send success response
     return res.status(200).json({
       message: "User updated successfully",
-      user: updatedUser,
+      user: {
+        id: updatedUser._id,
+        firstName: updatedUser.firstName,
+        lastName: updatedUser.lastName,
+        email: updatedUser.email,
+        age: updatedUser.age,
+        gender: updatedUser.gender,
+        phoneNumber: phoneNumberForResponse,
+      },
     });
   } catch (error) {
     // Handle duplicate key error
@@ -207,11 +288,6 @@ export const updateUser = async (req, res) => {
     });
   }
 };
-
-/**
- * Delete user from database
- * @route DELETE /users/delete/:userId
- */
 
 export const deleteUser = async (req, res) => {
   try {

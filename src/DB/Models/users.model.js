@@ -1,7 +1,3 @@
-// 1 (Schema) --> defining the shape of documents inside a collection (the structure).
-// 2 (Model) --> A Model is a wrapper around a schema. It’s what you actually use to interact with the database. When you create a model, Mongoose automatically maps it to a MongoDB collection (pluralized by default).
-// 3 (Collection) --> This is the actual MongoDB collection in the database. By default, model "User", the collection will be "users".
-
 import mongoose from "mongoose";
 
 // Defining Schema
@@ -55,11 +51,11 @@ const usersSchema = new mongoose.Schema(
       type: String,
       required: [true, "Password is required"],
       minLength: [8, "Password must be at least 8 characters!"],
-      // select: false, // Don't include password in queries by default
-      set(value) {
-        const randomValue = Math.random() * 100;
-        return `${value}_${randomValue}`;
-      },
+      select: false, // Don't include password in queries by default
+    },
+    phoneNumber: {
+      type: String,
+      required: [true, "Phone number is required"],
     },
   },
   {
