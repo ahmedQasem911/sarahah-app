@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 
-const ENCRYPTION_SECRET_KEY = Buffer.from("yxLw6rNVEAkyKvuFhl5iolrmNs0aWgRY"); // returns binary like
+const ENCRYPTION_SECRET_KEY = Buffer.from(
+  process.env.ENCRYPTION_SECRET_KEY || "yxLw6rNVEAkyKvuFhl5iolrmNs0aWgRY"
+);
 const IV_LENGTH = 16;
 
 export const encrypt = (text) => {

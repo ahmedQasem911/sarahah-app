@@ -2,10 +2,17 @@ import mongoose from "mongoose";
 
 const databaseConnection = async () => {
   try {
-    await mongoose.connect("mongodb://127.0.0.1:27017/sarahah-app");
+    // Connect to MongoDB
+    await mongoose.connect(process.env.MONGODB_URI);
+
     console.log("Database connected successfully");
+    console.log(`Database: ${mongoose.connection.name}`);
   } catch (error) {
-    console.log("Database connection failed: \n", error);
+    console.error("Database connection failed:");
+    console.error(error.message);
+
+    // Stop the application if database fails
+    process.exit(1);
   }
 };
 

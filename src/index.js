@@ -1,33 +1,40 @@
 import express from "express";
+import dotenv from "dotenv";
+import databaseConnection from "./DB/database.connection.js";
 import usersRouter from "./Modules/Users/users.controller.js";
 import messagesRouter from "./Modules/Messages/messages.controller.js";
-import databaseConnection from "./DB/database.connection.js";
 
-const PORT = 3000;
+dotenv.config();
+
+const PORT = process.env.PORT || 3000;
+
+databaseConnection();
 
 const app = express();
 
-// Parsing Middleware
 app.use(express.json());
 
-// Handling Routes
+// Routes
 app.use("/users", usersRouter);
 app.use("/messages", messagesRouter);
 
-// Handling Database Connection
-databaseConnection();
-
-// Handling Errors Middleware
-app.use((error, req, res, next) => {
-  console.error(error.stack);
-  res.status(500).send("Something Broke!");
-});
-
 // Not Found Middleware
 app.use((req, res) => {
-  res.status(404).send("Not Found");
+  res.status(404).json({
+    message: "Route not found",
+  });
+});
+
+// Error Handling Middleware
+app.use((error, req, res, next) => {
+  console.error("Error:", error.message);
+
+  res.status(error.status || 500).json({
+    message: error.message || "Something went wrong",
+  });
 });
 
 app.listen(PORT, () => {
   console.log(`Server is running on port: ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
 });
