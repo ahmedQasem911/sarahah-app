@@ -3,6 +3,9 @@ import User from "../../../DB/Models/users.model.js";
 import { decrypt, encrypt } from "../../../Utils/encryption.utils.js";
 import { emitter } from "../../../Utils/sendEmail.utils.js";
 import { customAlphabet } from "nanoid";
+import { v4 as uuidv4 } from "uuid";
+import { generateToken, verifyToken } from "../../../Utils/tokens.utils.js";
+import BlacklistedTokens from "../../../DB/Models/blacklisted-tokens.model.js";
 
 // ==================== OTP Generator ====================
 // Create a unique string generator for OTP (5 characters: letters a-h + digits 1-8)
@@ -226,7 +229,6 @@ export const signInUser = async (req, res) => {
     }
 
     // ========== 4. Verify Password ==========
-    // Compare provided password with hashed password in database
     const isPasswordMatched = compareSync(password, user.password);
 
     if (!isPasswordMatched) {
@@ -235,13 +237,27 @@ export const signInUser = async (req, res) => {
       });
     }
 
-    // ========== 5. Prepare Response Data ==========
-    // Decrypt phone number for response
+    // ========== 5. Generate JWT Access Token ==========
+    const accessToken = generateToken(
+      {
+        _id: user._id,
+        email: user.email,
+      },
+      process.env.JWT_SECRET_ACCESS_KEY,
+      {
+        issuer: "AQ",
+        audience: "Sarahah App Audience",
+        expiresIn: process.env.JWT_ACCESS_TOKEN_EXPIRATION_TIME,
+        jwtid: uuidv4(),
+      }
+    );
+
+    // ========== 6. Prepare Response Data ==========
     const decryptedPhoneNumber = user.phoneNumber
       ? decrypt(user.phoneNumber)
       : null;
 
-    // ========== 6. Send Success Response ==========
+    // ========== 7. Send Success Response ==========
     return res.status(200).json({
       message: "Sign in successful",
       user: {
@@ -254,6 +270,7 @@ export const signInUser = async (req, res) => {
         phoneNumber: decryptedPhoneNumber,
         isConfirmed: user.isConfirmed,
       },
+      accessToken,
     });
   } catch (error) {
     // ========== Error Handling ==========
@@ -266,27 +283,20 @@ export const signInUser = async (req, res) => {
 };
 
 /**
- * Update user data
- * @route PUT /users/update/:userId
+ * Update authenticated user's data
+ * @route PUT /users/update
  */
 export const updateUser = async (req, res) => {
   try {
-    // ========== 1. Extract User ID ==========
-    const { userId } = req.params;
+    // ========== 1. Extract User Data from Authenticated User ==========
+    // Get user data from authenticated user (already verified by middleware)
+    const { _id: userID } = req.loggedInUser;
+    const existingUser = req.loggedInUser;
 
     // ========== 2. Extract Update Data ==========
     const { firstName, lastName, age, gender, email, phoneNumber } = req.body;
 
-    // ========== 3. Check if User Exists ==========
-    const existingUser = await User.findById(userId);
-
-    if (!existingUser) {
-      return res.status(404).json({
-        message: "User not found",
-      });
-    }
-
-    // ========== 4. Validate Email Uniqueness ==========
+    // ========== 3. Validate Email Uniqueness ==========
     // If email is being updated, check if the new email already exists
     if (email && email !== existingUser.email) {
       const emailExists = await User.findOne({ email });
@@ -298,7 +308,7 @@ export const updateUser = async (req, res) => {
       }
     }
 
-    // ========== 5. Validate Full Name Uniqueness ==========
+    // ========== 4. Validate Full Name Uniqueness ==========
     // If firstName or lastName is being updated, check for duplicate full name
     if (firstName || lastName) {
       const firstNameToCheck = firstName || existingUser.firstName;
@@ -307,7 +317,7 @@ export const updateUser = async (req, res) => {
       const fullNameExists = await User.findOne({
         firstName: firstNameToCheck,
         lastName: lastNameToCheck,
-        _id: { $ne: userId }, // Exclude current user from check
+        _id: { $ne: userID }, // Exclude current user from check
       });
 
       if (fullNameExists) {
@@ -317,7 +327,7 @@ export const updateUser = async (req, res) => {
       }
     }
 
-    // ========== 6. Handle Phone Number Encryption ==========
+    // ========== 5. Handle Phone Number Encryption ==========
     let encryptedPhoneNumber;
 
     if (phoneNumber) {
@@ -335,7 +345,7 @@ export const updateUser = async (req, res) => {
       }
     }
 
-    // ========== 7. Prepare Update Data ==========
+    // ========== 6. Prepare Update Data ==========
     // Only include fields that are being updated (conditional spreading)
     const updateData = {
       ...(firstName && { firstName }),
@@ -346,19 +356,19 @@ export const updateUser = async (req, res) => {
       ...(encryptedPhoneNumber && { phoneNumber: encryptedPhoneNumber }),
     };
 
-    // ========== 8. Update User in Database ==========
-    const updatedUser = await User.findByIdAndUpdate(userId, updateData, {
+    // ========== 7. Update User in Database ==========
+    const updatedUser = await User.findByIdAndUpdate(userID, updateData, {
       new: true, // Return updated document
       runValidators: true, // Run schema validators on update
     });
 
-    // ========== 9. Prepare Response Data ==========
+    // ========== 8. Prepare Response Data ==========
     // Decrypt phone number for response
     const decryptedPhoneNumber = updatedUser.phoneNumber
       ? decrypt(updatedUser.phoneNumber)
       : null;
 
-    // ========== 10. Send Success Response ==========
+    // ========== 9. Send Success Response ==========
     return res.status(200).json({
       message: "User updated successfully",
       user: {
@@ -383,13 +393,6 @@ export const updateUser = async (req, res) => {
       });
     }
 
-    // Handle invalid ObjectId format
-    if (error.name === "CastError") {
-      return res.status(400).json({
-        message: "Invalid user ID format",
-      });
-    }
-
     // Handle unexpected errors
     console.error("Update User Error:", error);
     return res.status(500).json({
@@ -400,48 +403,78 @@ export const updateUser = async (req, res) => {
 };
 
 /**
- * Delete a user account
- * @route DELETE /users/delete/:userId
+ * Delete authenticated user's account
+ * @route DELETE /users/delete
  */
 export const deleteUser = async (req, res) => {
   try {
-    // ========== 1. Extract User ID ==========
-    const { userId } = req.params;
+    // ========== 1. Extract User ID from Authenticated User ==========
+    const { _id: userID } = req.loggedInUser;
 
-    // ========== 2. Check if User Exists ==========
-    // Find user before deletion to confirm existence and return data
-    const userToDelete = await User.findById(userId);
+    // ========== 2. Delete User ==========
+    await User.findByIdAndDelete(userID);
 
-    if (!userToDelete) {
-      return res.status(404).json({
-        message: "User not found",
-      });
-    }
-
-    // ========== 3. Delete User ==========
-    await User.findByIdAndDelete(userId);
-
-    // ========== 4. Send Success Response ==========
+    // ========== 3. Send Success Response ==========
     return res.status(200).json({
-      message: "User deleted successfully",
+      message: "User account deleted successfully",
       deletedUser: {
-        id: userToDelete._id,
-        email: userToDelete.email,
-        fullName: `${userToDelete.firstName} ${userToDelete.lastName}`,
+        id: req.loggedInUser._id,
+        email: req.loggedInUser.email,
+        fullName: `${req.loggedInUser.firstName} ${req.loggedInUser.lastName}`,
       },
     });
   } catch (error) {
     // ========== Error Handling ==========
+    console.error("Delete User Error:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
 
-    // Handle invalid ObjectId format
-    if (error.name === "CastError") {
+/**
+ * Sign out user and blacklist their access token
+ * @route POST /users/signout
+ */
+export const signOutUser = async (req, res) => {
+  try {
+    // ========== 1. Extract Token Data ==========
+    const { accesstoken } = req.headers;
+
+    // Decode token to get expiration and JWT ID
+    const decodedUserData = verifyToken(
+      accesstoken,
+      process.env.JWT_SECRET_ACCESS_KEY
+    );
+
+    // ========== 2. Prepare Token Expiration Date ==========
+    // Convert Unix timestamp (seconds) to JavaScript Date object
+    const expirationDate = new Date(decodedUserData.exp * 1000);
+
+    // ========== 3. Blacklist Token ==========
+    // Add token to blacklist to prevent reuse after sign out
+    await BlacklistedTokens.create({
+      tokenID: decodedUserData.jti,
+      expirationDate,
+    });
+
+    // ========== 4. Send Success Response ==========
+    return res.status(200).json({
+      message: "User signed out successfully",
+    });
+  } catch (error) {
+    // ========== Error Handling ==========
+
+    // Handle duplicate token blacklist
+    if (error.code === 11000) {
       return res.status(400).json({
-        message: "Invalid user ID format",
+        message: "Token has already been revoked",
       });
     }
 
     // Handle unexpected errors
-    console.error("Delete User Error:", error);
+    console.error("Sign Out Error:", error);
     return res.status(500).json({
       message: "Internal server error",
       error: error.message,

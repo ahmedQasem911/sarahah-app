@@ -7,7 +7,7 @@ import { EventEmitter } from "node:events";
  * Send email using Nodemailer
  * @param {Object} emailOptions - Email configuration options
  * @param {string} emailOptions.receiverEmail - Recipient email address
- * @param {string} [emailOptions.cc] - CC email address (defaults to env variable)
+ * @param {string} [emailOptions.cc] - CC email address
  * @param {string} emailOptions.emailSubject - Email subject line
  * @param {string} emailOptions.emailContent - Email HTML content
  * @param {Array} [emailOptions.emailAttachments] - Array of email attachments
@@ -21,26 +21,25 @@ export const sendEmail = async ({
   emailAttachments = [],
 }) => {
   // ========== 1. Create Email Transporter ==========
-  // Configure SMTP transporter with credentials from environment variables
   const transporter = nodemailer.createTransport({
-    host: process.env.EMAIL_HOST, // SMTP host (e.g., smtp.gmail.com)
-    port: process.env.EMAIL_PORT, // SMTP port (e.g., 465 for secure)
-    secure: true, // Use SSL/TLS
+    host: process.env.EMAIL_HOST,
+    port: process.env.EMAIL_PORT,
+    secure: true,
     auth: {
-      user: process.env.EMAIL_USER, // Sender email address
-      pass: process.env.EMAIL_PASSWORD, // Email password or app-specific password
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASSWORD,
     },
   });
 
   // ========== 2. Send Email ==========
   // Send email with configured options
   const info = await transporter.sendMail({
-    from: process.env.EMAIL_FROM, // Sender address
-    to: receiverEmail, // Recipient address
-    cc, // CC recipients (optional)
-    subject: emailSubject, // Email subject
-    html: emailContent, // HTML body content
-    attachments: emailAttachments, // File attachments (optional)
+    from: process.env.EMAIL_FROM,
+    to: receiverEmail,
+    cc,
+    subject: emailSubject,
+    html: emailContent,
+    attachments: emailAttachments,
   });
 
   return info;

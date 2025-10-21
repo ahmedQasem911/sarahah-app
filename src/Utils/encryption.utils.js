@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 
 // ==================== Configuration ====================
 // Encryption key for AES-256-CBC (32 bytes = 256 bits)
-// Should be stored in environment variables for security
 const ENCRYPTION_SECRET_KEY = Buffer.from(
   process.env.ENCRYPTION_SECRET_KEY || "yxLw6rNVEAkyKvuFhl5iolrmNs0aWgRY"
 );
