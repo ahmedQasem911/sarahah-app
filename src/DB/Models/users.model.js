@@ -1,8 +1,9 @@
 import mongoose from "mongoose";
 
-// User Schema
+// ==================== User Schema ====================
 const usersSchema = new mongoose.Schema(
   {
+    // ========== Personal Information ==========
     firstName: {
       type: String,
       required: [true, "First name is required"],
@@ -28,6 +29,8 @@ const usersSchema = new mongoose.Schema(
       enum: ["male", "female"],
       default: "male",
     },
+
+    // ========== Authentication & Contact ==========
     email: {
       type: String,
       required: [true, "Email is required"],
@@ -47,6 +50,8 @@ const usersSchema = new mongoose.Schema(
       type: String,
       required: [true, "Phone number is required"],
     },
+
+    // ========== OTP Management ==========
     otps: {
       confirmation: {
         type: String,
@@ -63,6 +68,8 @@ const usersSchema = new mongoose.Schema(
         default: null,
       },
     },
+
+    // ========== Account Status ==========
     isConfirmed: {
       type: Boolean,
       default: false,
@@ -71,24 +78,39 @@ const usersSchema = new mongoose.Schema(
   {
     timestamps: true,
     toJSON: {
-      virtuals: true, // to see virtuals in the response
+      virtuals: true, // Include virtuals when converting to JSON
     },
     toObject: {
-      virtuals: true, // to see virtuals in the log
+      virtuals: true, // Include virtuals when converting to Object
     },
   }
 );
 
-// Virtual: Get full name
+// ==================== Virtuals ====================
+
+/**
+ * Virtual: Get user's full name
+ * Combines firstName and lastName
+ */
 usersSchema.virtual("fullName").get(function () {
   return `${this.firstName} ${this.lastName}`;
 });
 
-// Indexes
+/**
+ * Virtual: Get all messages received by this user
+ * One-to-Many relationship: One User can have many Messages
+ */
+usersSchema.virtual("messages", {
+  ref: "Messages",
+  localField: "_id",
+  foreignField: "receiverID",
+});
+
+// ==================== Indexes ====================
 usersSchema.index({ email: 1 }, { unique: true });
 usersSchema.index({ firstName: 1, lastName: 1 }, { unique: true });
 
-// Create Model
+// ==================== Create Model ====================
 const User = mongoose.model("User", usersSchema);
 
 export default User;
