@@ -57,6 +57,12 @@ const usersSchema = new mongoose.Schema(
         default: null,
       },
     },
+    otpExpiration: {
+      passwordReset: {
+        type: Date,
+        default: null,
+      },
+    },
     isConfirmed: {
       type: Boolean,
       default: false,

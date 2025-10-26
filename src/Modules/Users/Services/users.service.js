@@ -585,6 +585,7 @@ export const requestPasswordReset = async (req, res) => {
     // ========== 4. Hash and Store OTP ==========
     // Hash OTP before storing (security best practice)
     user.otps.passwordReset = hashSync(otp, 10);
+    user.otpExpiration.passwordReset = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
     await user.save();
 
     // ========== 5. Send Password Reset Email ==========
@@ -668,6 +669,16 @@ export const resetPassword = async (req, res) => {
     if (!user.otps?.passwordReset) {
       return res.status(400).json({
         message: "No password reset request found. Please request a new OTP.",
+      });
+    }
+
+    // Check if OTP has expired
+    if (
+      user.otpExpiration?.passwordReset &&
+      new Date() > user.otpExpiration.passwordReset
+    ) {
+      return res.status(401).json({
+        message: "OTP has expired. Please request a new one.",
       });
     }
 
