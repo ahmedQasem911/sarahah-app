@@ -32,7 +32,6 @@ export const sendEmail = async ({
   });
 
   // ========== 2. Send Email ==========
-  // Send email with configured options
   const info = await transporter.sendMail({
     from: process.env.EMAIL_FROM,
     to: receiverEmail,
@@ -47,16 +46,8 @@ export const sendEmail = async ({
 
 // ==================== Event Emitter for Async Emails ====================
 
-/**
- * Event emitter for sending emails asynchronously
- * Used to send emails without blocking the main application flow
- */
 export const emitter = new EventEmitter();
 
-/**
- * Listen for 'sendingEmail' event and trigger email sending
- * This allows non-blocking email operations
- */
 emitter.on("sendingEmail", (emailOptions) => {
   sendEmail(emailOptions);
 });

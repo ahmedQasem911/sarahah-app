@@ -2,12 +2,10 @@ import crypto from "node:crypto";
 
 // ==================== Configuration ====================
 // Encryption key for AES-256-CBC (32 bytes = 256 bits)
-const ENCRYPTION_SECRET_KEY = Buffer.from(
-  process.env.ENCRYPTION_SECRET_KEY || "yxLw6rNVEAkyKvuFhl5iolrmNs0aWgRY"
-);
+const ENCRYPTION_SECRET_KEY = Buffer.from(process.env.ENCRYPTION_SECRET_KEY || "yxLw6rNVEAkyKvuFhl5iolrmNs0aWgRY");
 
 // Initialization Vector length (16 bytes for AES-256-CBC)
-const IV_LENGTH = 16;
+const IV_LENGTH = parseInt(process.env.IV_LENGTH) || 16;
 
 // ==================== Encryption Functions ====================
 

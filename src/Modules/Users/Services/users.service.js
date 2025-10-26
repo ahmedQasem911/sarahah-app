@@ -41,7 +41,10 @@ export const signUpUser = async (req, res) => {
 
     // ========== 4. Hash Password ==========
     // Hash password with bcrypt (10 salt rounds for security)
-    const hashedPassword = hashSync(password, 10);
+    const hashedPassword = hashSync(
+      password,
+      Number(process.env.SALTED_ROUNDS)
+    );
 
     // ========== 5. Generate OTP ==========
     // Generate a 5-character OTP for email confirmation
@@ -56,7 +59,7 @@ export const signUpUser = async (req, res) => {
       email,
       password: hashedPassword,
       phoneNumber: encryptedPhoneNumber,
-      otps: { confirmation: hashSync(otp, 10) }, // Store hashed OTP
+      otps: { confirmation: hashSync(otp, Number(process.env.SALTED_ROUNDS)) }, // Store hashed OTP
     });
 
     // ========== 7. Send Confirmation Email ==========
@@ -139,7 +142,6 @@ export const confirmEmail = async (req, res) => {
     const { email, otp } = req.body;
 
     // ========== 2. Find Unconfirmed User ==========
-    // Find user by email first
     const user = await User.findOne({ email });
 
     if (!user) {
@@ -156,7 +158,6 @@ export const confirmEmail = async (req, res) => {
     }
 
     // ========== 3. Verify OTP ==========
-    // Compare provided OTP with hashed OTP stored in database
     const isOtpMatched = compareSync(otp, user.otps?.confirmation);
 
     if (!isOtpMatched) {
@@ -174,7 +175,6 @@ export const confirmEmail = async (req, res) => {
     await user.save();
 
     // ========== 5. Prepare Response Data ==========
-    // Decrypt phone number for response
     const decryptedPhoneNumber = user.phoneNumber
       ? decrypt(user.phoneNumber)
       : null;
@@ -237,7 +237,7 @@ export const signInUser = async (req, res) => {
       });
     }
 
-    // ========== 5. Generate JWT Access Token ==========
+    // ========== 5. Generate JWT Access Token & Refresh Token ==========
     const accessToken = generateToken(
       {
         _id: user._id,
@@ -248,6 +248,22 @@ export const signInUser = async (req, res) => {
         issuer: "AQ",
         audience: "Sarahah App Audience",
         expiresIn: process.env.JWT_ACCESS_TOKEN_EXPIRATION_TIME,
+        jwtid: uuidv4(),
+      }
+    );
+
+    const refreshToken = generateToken(
+      {
+        _id: user._id,
+        email: user.email,
+      },
+      process.env.JWT_SECRET_REFRESH_KEY,
+      {
+        issuer: "AQ",
+        audience: "Sarahah App Audience",
+        issuer: "AQ",
+        audience: "Sarahah App Audience",
+        expiresIn: process.env.JWT_REFRESH_TOKEN_EXPIRATION_TIME,
         jwtid: uuidv4(),
       }
     );
@@ -271,6 +287,7 @@ export const signInUser = async (req, res) => {
         isConfirmed: user.isConfirmed,
       },
       accessToken,
+      refreshToken,
     });
   } catch (error) {
     // ========== Error Handling ==========
@@ -439,23 +456,18 @@ export const deleteUser = async (req, res) => {
  */
 export const signOutUser = async (req, res) => {
   try {
-    // ========== 1. Extract Token Data ==========
-    const { accesstoken } = req.headers;
-
-    // Decode token to get expiration and JWT ID
-    const decodedUserData = verifyToken(
-      accesstoken,
-      process.env.JWT_SECRET_ACCESS_KEY
-    );
+    // ========== 1. Extract Decoded Token Data ==========
+    // Token data already decoded and validated by authentication middleware
+    const { exp, jti } = req.decodedToken;
 
     // ========== 2. Prepare Token Expiration Date ==========
     // Convert Unix timestamp (seconds) to JavaScript Date object
-    const expirationDate = new Date(decodedUserData.exp * 1000);
+    const expirationDate = new Date(exp * 1000);
 
     // ========== 3. Blacklist Token ==========
     // Add token to blacklist to prevent reuse after sign out
     await BlacklistedTokens.create({
-      tokenID: decodedUserData.jti,
+      tokenID: jti,
       expirationDate,
     });
 
@@ -475,6 +487,225 @@ export const signOutUser = async (req, res) => {
 
     // Handle unexpected errors
     console.error("Sign Out Error:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Refresh access token using a valid refresh token
+ * @route POST /users/refresh-token
+ */
+export const refreshTokenService = async (req, res) => {
+  // ========== 1. Extract Refresh Token ==========
+  const { refreshtoken } = req.headers;
+
+  // Validate refresh token exists
+  if (!refreshtoken) {
+    return res.status(400).json({
+      message: "Refresh token is required",
+    });
+  }
+
+  // ========== 2. Verify Refresh Token ==========
+  const decodedData = verifyToken(
+    refreshtoken,
+    process.env.JWT_SECRET_REFRESH_KEY
+  );
+
+  // ========== 3. Validate Token Structure ==========
+  if (!decodedData._id || !decodedData.email) {
+    return res.status(401).json({
+      message: "Invalid refresh token: missing user data",
+    });
+  }
+
+  // ========== 4. Verify User Still Exists ==========
+  const user = await User.findById(decodedData._id);
+
+  if (!user) {
+    return res.status(404).json({
+      message: "User not found",
+    });
+  }
+
+  // ========== 5. Generate New Access Token ==========
+  const accessToken = generateToken(
+    {
+      _id: decodedData._id,
+      email: decodedData.email,
+    },
+    process.env.JWT_SECRET_ACCESS_KEY,
+    {
+      issuer: "AQ",
+      audience: "Sarahah App Audience",
+      expiresIn: process.env.JWT_ACCESS_TOKEN_EXPIRATION_TIME,
+      jwtid: uuidv4(),
+    }
+  );
+
+  // ========== 6. Send Success Response ==========
+  return res.status(200).json({
+    message: "Access token refreshed successfully",
+    accessToken,
+  });
+};
+
+/**
+ * Request password reset - sends OTP to user's email
+ * @route POST /users/forgot-password
+ */
+export const requestPasswordReset = async (req, res) => {
+  try {
+    // ========== 1. Extract Email ==========
+    const { email } = req.body;
+
+    // Validate email exists
+    if (!email) {
+      return res.status(400).json({
+        message: "Email is required",
+      });
+    }
+
+    // ========== 2. Find User by Email ==========
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      // Security: Don't reveal if email exists or not
+      return res.status(200).json({
+        message: "If this email exists, a password reset OTP has been sent",
+      });
+    }
+
+    // ========== 3. Generate OTP ==========
+    const otp = generateOTP();
+
+    // ========== 4. Hash and Store OTP ==========
+    // Hash OTP before storing (security best practice)
+    user.otps.passwordReset = hashSync(otp, 10);
+    await user.save();
+
+    // ========== 5. Send Password Reset Email ==========
+    emitter.emit("sendingEmail", {
+      receiverEmail: email,
+      emailSubject: "Sarahah App - Password Reset Request",
+      emailContent: `
+      <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px; background-color: #f9f9f9;">
+        <!-- Logo -->
+        <div style="margin-bottom: 20px;">
+          <img src="cid:appLogo" alt="Company Logo" style="max-width: 150px;" />
+        </div>
+
+        <h2 style="color: #0a66c2;">Password Reset Request</h2>
+        <p style="font-size: 16px; color: #333;">You requested to reset your password. Use the OTP below to proceed:</p>
+
+        <!-- OTP Code -->
+        <div style="margin: 20px 0; font-size: 24px; font-weight: bold; letter-spacing: 3px; color: #0a66c2;">${otp}</div>
+
+        <p style="margin-top: 20px; font-size: 14px; color: #555;">
+          This OTP is valid for 10 minutes. If you didn't request this, please ignore this email.
+        </p>
+      </div>
+      `,
+      emailAttachments: [
+        {
+          filename: "logo.png",
+          path: "logo.png",
+          cid: "appLogo",
+        },
+      ],
+    });
+
+    // ========== 6. Send Success Response ==========
+    return res.status(200).json({
+      message: "If this email exists, a password reset OTP has been sent",
+    });
+  } catch (error) {
+    // ========== Error Handling ==========
+    console.error("Request Password Reset Error:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Reset password using OTP
+ * @route POST /users/reset-password
+ */
+export const resetPassword = async (req, res) => {
+  try {
+    // ========== 1. Extract Data ==========
+    const { email, otp, newPassword } = req.body;
+
+    // ========== 2. Validate Required Fields ==========
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({
+        message: "Email, OTP, and new password are required",
+      });
+    }
+
+    // Validate password strength
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        message: "Password must be at least 8 characters long",
+      });
+    }
+
+    // ========== 3. Find User by Email ==========
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    // ========== 4. Check if OTP Exists ==========
+    if (!user.otps?.passwordReset) {
+      return res.status(400).json({
+        message: "No password reset request found. Please request a new OTP.",
+      });
+    }
+
+    // ========== 5. Verify OTP ==========
+    const isOtpMatched = compareSync(otp, user.otps.passwordReset);
+
+    if (!isOtpMatched) {
+      return res.status(401).json({
+        message: "Invalid OTP",
+      });
+    }
+
+    // ========== 6. Hash New Password ==========
+    const hashedPassword = hashSync(newPassword, 10);
+
+    // ========== 7. Update Password and Clear OTP ==========
+    user.password = hashedPassword;
+    user.otps.passwordReset = undefined;
+    await user.save();
+
+    // ========== 8. Send Success Response ==========
+    return res.status(200).json({
+      message:
+        "Password reset successfully. You can now sign in with your new password.",
+    });
+  } catch (error) {
+    // ========== Error Handling ==========
+
+    // Handle validation errors
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        message: "Validation error",
+        error: error.message,
+      });
+    }
+
+    // Handle unexpected errors
+    console.error("Reset Password Error:", error);
     return res.status(500).json({
       message: "Internal server error",
       error: error.message,

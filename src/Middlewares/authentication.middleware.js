@@ -24,7 +24,6 @@ export const authenticationMiddleware = async (req, res, next) => {
     }
 
     // ========== 2. Verify and Decode Token ==========
-    // Verify token signature and decode payload
     const decodedUserData = verifyToken(
       accesstoken,
       process.env.JWT_SECRET_ACCESS_KEY
@@ -51,7 +50,6 @@ export const authenticationMiddleware = async (req, res, next) => {
     }
 
     // ========== 5. Verify User Exists ==========
-    // Check if user still exists in database
     const user = await User.findById(decodedUserData._id);
 
     if (!user) {
@@ -60,9 +58,9 @@ export const authenticationMiddleware = async (req, res, next) => {
       });
     }
 
-    // ========== 6. Attach User to Request ==========
-    // Make user data available to subsequent middleware and route handlers
+    // ========== 6. Attach User to Request and decoded token data ==========
     req.loggedInUser = user;
+    req.decodedToken = decodedUserData;
 
     // ========== 7. Continue to Next Middleware ==========
     next();

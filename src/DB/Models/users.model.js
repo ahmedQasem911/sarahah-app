@@ -52,6 +52,10 @@ const usersSchema = new mongoose.Schema(
         type: String,
         default: null,
       },
+      passwordReset: {
+        type: String,
+        default: null,
+      },
     },
     isConfirmed: {
       type: Boolean,
