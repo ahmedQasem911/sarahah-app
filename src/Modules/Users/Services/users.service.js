@@ -6,6 +6,8 @@ import { customAlphabet } from "nanoid";
 import { v4 as uuidv4 } from "uuid";
 import { generateToken, verifyToken } from "../../../Utils/tokens.utils.js";
 import BlacklistedTokens from "../../../DB/Models/blacklisted-tokens.model.js";
+import Messages from "../../../DB/Models/messages.model.js";
+import mongoose from "mongoose";
 
 // ==================== OTP Generator ====================
 // Create a unique string generator for OTP (5 characters: letters a-h + digits 1-8)
@@ -420,20 +422,34 @@ export const updateUser = async (req, res) => {
 };
 
 /**
- * Delete authenticated user's account
+ * Delete authenticated user's account and all their messages
  * @route DELETE /users/delete
  */
 export const deleteUser = async (req, res) => {
+  // ========== Start Session ==========
+  const session = await mongoose.startSession();
+
   try {
     // ========== 1. Extract User ID from Authenticated User ==========
     const { _id: userID } = req.loggedInUser;
 
-    // ========== 2. Delete User ==========
-    await User.findByIdAndDelete(userID);
+    // ========== 2. Start Transaction ==========
+    // Use transaction to ensure both operations succeed or both fail (atomicity)
+    session.startTransaction();
 
-    // ========== 3. Send Success Response ==========
+    // ========== 3. Delete User and Their Messages ==========
+    // Delete user account
+    await User.findByIdAndDelete(userID, { session });
+
+    // Delete all messages received by this user
+    await Messages.deleteMany({ receiverID: userID }, { session });
+
+    // ========== 4. Commit Transaction ==========
+    await session.commitTransaction();
+
+    // ========== 5. Send Success Response ==========
     return res.status(200).json({
-      message: "User account deleted successfully",
+      message: "User account and all messages deleted successfully",
       deletedUser: {
         id: req.loggedInUser._id,
         email: req.loggedInUser.email,
@@ -441,12 +457,18 @@ export const deleteUser = async (req, res) => {
       },
     });
   } catch (error) {
+    // ========== Rollback Transaction on Error ==========
+    await session.abortTransaction();
+
     // ========== Error Handling ==========
     console.error("Delete User Error:", error);
     return res.status(500).json({
       message: "Internal server error",
       error: error.message,
     });
+  } finally {
+    // ========== Always End Session ==========
+    await session.endSession();
   }
 };
 
