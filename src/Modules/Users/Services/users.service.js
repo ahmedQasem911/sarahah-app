@@ -8,6 +8,7 @@ import { generateToken, verifyToken } from "../../../Utils/tokens.utils.js";
 import BlacklistedTokens from "../../../DB/Models/blacklisted-tokens.model.js";
 import Messages from "../../../DB/Models/messages.model.js";
 import mongoose from "mongoose";
+import { USER_ROLE } from "../../../Common/Enums/role.enum.js";
 
 // ==================== OTP Generator ====================
 // Create a unique string generator for OTP (5 characters: letters a-h + digits 1-8)
@@ -22,11 +23,30 @@ const generateOTP = customAlphabet("abcdefgh12345678", 5);
 export const signUpUser = async (req, res) => {
   try {
     // ========== 1. Extract User Data ==========
-    const { firstName, lastName, age, gender, email, password, phoneNumber } =
-      req.body;
+    const {
+      firstName,
+      lastName,
+      age,
+      gender,
+      email,
+      password,
+      phoneNumber,
+      role,
+    } = req.body;
 
-    // ========== 2. Check User Uniqueness ==========
-    // Check if user already exists by email OR by full name (firstName + lastName)
+    // ========== 2. Validate Role (if provided) ==========
+    if (role) {
+      // Get valid roles from USER_ROLE enum
+      const validRoles = Object.values(USER_ROLE); // ["admin", "user"]
+
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({
+          message: `Invalid role. Allowed roles: ${validRoles.join(", ")}`,
+        });
+      }
+    }
+
+    // ========== 3. Check User Uniqueness ==========
     const existingUser = await User.findOne({
       $or: [{ email }, { firstName, lastName }],
     });
@@ -37,22 +57,16 @@ export const signUpUser = async (req, res) => {
       });
     }
 
-    // ========== 3. Encrypt Phone Number ==========
-    // Encrypt phone number using AES-256-CBC for security
+    // ========== 4. Encrypt Phone Number ==========
     const encryptedPhoneNumber = encrypt(phoneNumber);
 
-    // ========== 4. Hash Password ==========
-    // Hash password with bcrypt (10 salt rounds for security)
-    const hashedPassword = hashSync(
-      password,
-      Number(process.env.SALTED_ROUNDS)
-    );
+    // ========== 5. Hash Password ==========
+    const hashedPassword = hashSync(password, 10);
 
-    // ========== 5. Generate OTP ==========
-    // Generate a 5-character OTP for email confirmation
+    // ========== 6. Generate OTP ==========
     const otp = generateOTP();
 
-    // ========== 6. Create New User ==========
+    // ========== 7. Create New User ==========
     const newUser = await User.create({
       firstName,
       lastName,
@@ -61,11 +75,11 @@ export const signUpUser = async (req, res) => {
       email,
       password: hashedPassword,
       phoneNumber: encryptedPhoneNumber,
-      otps: { confirmation: hashSync(otp, Number(process.env.SALTED_ROUNDS)) }, // Store hashed OTP
+      otps: { confirmation: hashSync(otp, 10) },
+      role: role || USER_ROLE.USER,
     });
 
-    // ========== 7. Send Confirmation Email ==========
-    // Emit event to send email asynchronously (non-blocking)
+    // ========== 8. Send Confirmation Email ==========
     emitter.emit("sendingEmail", {
       receiverEmail: email,
       emailSubject: "Welcome to Sarahah App - Confirm Your Account",
@@ -89,18 +103,17 @@ export const signUpUser = async (req, res) => {
         {
           filename: "logo.png",
           path: "logo.png",
-          cid: "appLogo", // Content ID for embedding in email
+          cid: "appLogo",
         },
       ],
     });
 
-    // ========== 8. Prepare Response Data ==========
-    // Decrypt phone number for response
+    // ========== 9. Prepare Response Data ==========
     const decryptedPhoneNumber = newUser.phoneNumber
       ? decrypt(newUser.phoneNumber)
       : null;
 
-    // ========== 9. Send Success Response ==========
+    // ========== 10. Send Success Response ==========
     return res.status(201).json({
       message: "User created successfully",
       user: {
@@ -111,6 +124,7 @@ export const signUpUser = async (req, res) => {
         age: newUser.age,
         gender: newUser.gender,
         phoneNumber: decryptedPhoneNumber,
+        role: newUser.role,
         isConfirmed: newUser.isConfirmed,
       },
     });
@@ -285,6 +299,7 @@ export const signInUser = async (req, res) => {
         email: user.email,
         age: user.age,
         gender: user.gender,
+        role: user.role,
         phoneNumber: decryptedPhoneNumber,
         isConfirmed: user.isConfirmed,
       },
@@ -739,6 +754,47 @@ export const resetPassword = async (req, res) => {
 
     // Handle unexpected errors
     console.error("Reset Password Error:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get all users (Admin only)
+ * @route GET /users/list-users
+ */
+export const getAllUsers = async (req, res) => {
+  try {
+    // ========== 1. Get All Users ==========
+    const users = await User.find()
+      .select("-password -otps -otpExpiration")
+      .sort({ createdAt: -1 });
+
+    // ========== 2. Decrypt Phone Numbers ==========
+    const usersWithDecryptedPhones = users.map((user) => ({
+      id: user._id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      fullName: user.fullName,
+      email: user.email,
+      age: user.age,
+      gender: user.gender,
+      phoneNumber: user.phoneNumber ? decrypt(user.phoneNumber) : null,
+      isConfirmed: user.isConfirmed,
+      createdAt: user.createdAt,
+    }));
+
+    // ========== 3. Send Success Response ==========
+    return res.status(200).json({
+      message: "Users retrieved successfully",
+      count: users.length,
+      data: usersWithDecryptedPhones,
+    });
+  } catch (error) {
+    // ========== Error Handling ==========
+    console.error("Get All Users Error:", error);
     return res.status(500).json({
       message: "Internal server error",
       error: error.message,

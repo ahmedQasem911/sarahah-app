@@ -1,4 +1,6 @@
 import mongoose from "mongoose";
+import { GENDER } from "../../Common/Enums/gender.enum.js";
+import { USER_ROLE } from "../../Common/Enums/role.enum.js";
 
 // ==================== User Schema ====================
 const usersSchema = new mongoose.Schema(
@@ -26,8 +28,13 @@ const usersSchema = new mongoose.Schema(
     },
     gender: {
       type: String,
-      enum: ["male", "female"],
-      default: "male",
+      enum: Object.values(GENDER),
+      default: GENDER.MALE,
+    },
+    role: {
+      type: String,
+      enum: Object.values(USER_ROLE),
+      default: USER_ROLE.USER,
     },
 
     // ========== Authentication & Contact ==========
