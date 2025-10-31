@@ -61,7 +61,10 @@ export const signUpUser = async (req, res) => {
     const encryptedPhoneNumber = encrypt(phoneNumber);
 
     // ========== 5. Hash Password ==========
-    const hashedPassword = hashSync(password, 10);
+    const hashedPassword = hashSync(
+      password,
+      Number(process.env.SALTED_ROUNDS)
+    );
 
     // ========== 6. Generate OTP ==========
     const otp = generateOTP();
@@ -75,7 +78,7 @@ export const signUpUser = async (req, res) => {
       email,
       password: hashedPassword,
       phoneNumber: encryptedPhoneNumber,
-      otps: { confirmation: hashSync(otp, 10) },
+      otps: { confirmation: hashSync(otp, Number(process.env.SALTED_ROUNDS)) },
       role: role || USER_ROLE.USER,
     });
 
@@ -621,7 +624,7 @@ export const requestPasswordReset = async (req, res) => {
 
     // ========== 4. Hash and Store OTP ==========
     // Hash OTP before storing (security best practice)
-    user.otps.passwordReset = hashSync(otp, 10);
+    user.otps.passwordReset = hashSync(otp, Number(process.env.SALTED_ROUNDS));
     user.otpExpiration.passwordReset = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
     await user.save();
 
@@ -729,7 +732,10 @@ export const resetPassword = async (req, res) => {
     }
 
     // ========== 6. Hash New Password ==========
-    const hashedPassword = hashSync(newPassword, 10);
+    const hashedPassword = hashSync(
+      newPassword,
+      Number(process.env.SALTED_ROUNDS)
+    );
 
     // ========== 7. Update Password and Clear OTP ==========
     user.password = hashedPassword;
