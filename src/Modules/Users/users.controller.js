@@ -38,11 +38,13 @@ router.put(
   validationMiddleware(ConfirmEmailSchema),
   confirmEmail
 );
+
 router.post(
   "/forgot-password",
   validationMiddleware(ForgotPasswordSchema),
   requestPasswordReset
 );
+
 router.post(
   "/reset-password",
   validationMiddleware(ResetPasswordSchema),

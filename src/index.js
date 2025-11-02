@@ -1,18 +1,15 @@
 import express from "express";
-import dotenv from "dotenv";
+import "dotenv/config";
 import databaseConnection from "./DB/database.connection.js";
 import usersRouter from "./Modules/Users/users.controller.js";
 import messagesRouter from "./Modules/Messages/messages.controller.js";
 
-dotenv.config();
-
-const PORT = process.env.PORT || 3000;
-
-databaseConnection();
+const PORT = process.env.PORT;
 
 const app = express();
 
 app.use(express.json());
+databaseConnection();
 
 // Routes
 app.use("/users", usersRouter);

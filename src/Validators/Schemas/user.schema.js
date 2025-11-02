@@ -76,14 +76,16 @@ export const SignUpSchema = {
     password: Joi.string()
       .min(8)
       .max(50)
-      .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/) // Lowercase, uppercase, number
+      .pattern(
+        /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*])[A-Za-z\d@$!%*]{8,}$/
+      ) // Lowercase, uppercase, number, and a special character from the set @$!%*?&
       .required()
       .messages({
         "string.empty": "Password is required",
         "string.min": "Password must be at least 8 characters long",
         "string.max": "Password must be at most 50 characters long",
         "string.pattern.base":
-          "Password must contain at least one uppercase letter, one lowercase letter, and one number",
+          "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character from the set @$!%*?&",
         "any.required": "Password is required",
       }),
 

@@ -7,7 +7,6 @@ const blacklistedTokensSchema = new mongoose.Schema(
     tokenID: {
       type: String,
       required: [true, "Token ID is required"],
-      unique: true,
     },
     expirationDate: {
       type: Date,
@@ -20,7 +19,7 @@ const blacklistedTokensSchema = new mongoose.Schema(
 );
 
 // ==================== Indexes ====================
-// blacklistedTokensSchema.index({ tokenID: 1 });     Returns a warning
+blacklistedTokensSchema.index({ tokenID: 1 });
 
 // TTL index to automatically delete expired tokens from database
 // Removes documents after expirationDate has passed
